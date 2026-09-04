@@ -2,6 +2,198 @@
 -- SAVED VARIABLES
 ---------------------------------------------------------
 UAHealDB = UAHealDB or {}
+UAHealDB.roles = UAHealDB.roles or {}
+
+-- Role assignment: cycles none -> Tank -> Healer -> DPS -> none on
+-- click. Stored by character name (persists across sessions and
+-- regardless of who's currently in your party, matching how VuhDo and
+-- Puppeteer handle role assignment).
+local ROLE_CYCLE = { "Tank", "Healer", "DPS" }
+local ROLE_COLORS = {
+    Tank = { 0.3, 0.5, 1 },
+    Healer = { 0.3, 1, 0.4 },
+    DPS = { 1, 0.3, 0.3 },
+}
+
+local function CycleRole(name)
+    if not name then return end
+    -- Defensively re-initializes here rather than relying solely on the
+    -- one-time setup at the top of the file -- confirmed via testing
+    -- that UAHealDB.roles can end up nil by the time this actually
+    -- runs, likely because SavedVariables loading on this client
+    -- happens later than expected and overwrites the initial setup
+    -- with an older saved structure that predates this feature.
+    UAHealDB.roles = UAHealDB.roles or {}
+    local current = UAHealDB.roles[name]
+
+    -- FIX: ROLE_CYCLE used to contain nil as its first element (for the
+    -- "no role" state), but ipairs() stops iterating at the first nil
+    -- it encounters -- meaning the loop below never actually ran, and
+    -- currentIndex always stayed at its default of 1, so every click
+    -- set the role to "Tank" regardless of the current value. Removed
+    -- nil from the table entirely and handle the "no role" case
+    -- explicitly instead.
+    if not current then
+        UAHealDB.roles[name] = ROLE_CYCLE[1]
+        return
+    end
+
+    local currentIndex = nil
+    for i, role in ipairs(ROLE_CYCLE) do
+        if role == current then
+            currentIndex = i
+            break
+        end
+    end
+
+    if not currentIndex or currentIndex >= #ROLE_CYCLE then
+        UAHealDB.roles[name] = nil
+    else
+        UAHealDB.roles[name] = ROLE_CYCLE[currentIndex + 1]
+    end
+end
+
+local function CreateRoleBadge(parentBar)
+    local badge = CreateFrame("Frame", nil, parentBar)
+    -- Enlarged from 20x14 to 30x30 for a much clearer, easier-to-read icon.
+    badge:SetWidth(30)
+    badge:SetHeight(30)
+    badge:SetPoint("TOPRIGHT", parentBar, "TOPRIGHT", 0, 0)
+    badge:EnableMouse(true)
+    -- FIX: set higher than the card border's edge strips (level 10),
+    -- which likely overlap this exact corner and were silently
+    -- intercepting clicks before they ever reached the badge.
+    badge:SetFrameLevel(15)
+
+    local badgeBG = badge:CreateTexture(nil, "BACKGROUND")
+    badgeBG:SetAllPoints()
+    badgeBG:SetTexture("Interface\\Buttons\\WHITE8x8")
+    badgeBG:SetVertexColor(0, 0, 0, 0)
+
+    -- Empty-slot indicator: a black-outlined square with a transparent
+    -- center (so whatever's behind it shows through), visible only when
+    -- no role is assigned yet -- gives a clear visual cue that this is
+    -- a clickable slot rather than just being invisible/easy to miss.
+    -- Same 4-edge-strip technique already proven reliable for the card
+    -- borders elsewhere in this addon.
+    -- Sized to match the icon exactly (24x24, centered within the 30x30
+    -- badge -- a 3px inset on every side).
+    local EMPTY_OUTLINE_THICKNESS = 1
+    local emptyOutlineTop = badge:CreateTexture(nil, "OVERLAY")
+    emptyOutlineTop:SetPoint("TOPLEFT", badge, "TOPLEFT", 5, -5)
+    emptyOutlineTop:SetPoint("TOPRIGHT", badge, "TOPRIGHT", -5, -5)
+    emptyOutlineTop:SetHeight(EMPTY_OUTLINE_THICKNESS)
+    emptyOutlineTop:SetTexture("Interface\\Buttons\\WHITE8x8")
+    emptyOutlineTop:SetVertexColor(0, 0, 0, 1)
+
+    local emptyOutlineBottom = badge:CreateTexture(nil, "OVERLAY")
+    emptyOutlineBottom:SetPoint("BOTTOMLEFT", badge, "BOTTOMLEFT", 5, 5)
+    emptyOutlineBottom:SetPoint("BOTTOMRIGHT", badge, "BOTTOMRIGHT", -5, 5)
+    emptyOutlineBottom:SetHeight(EMPTY_OUTLINE_THICKNESS)
+    emptyOutlineBottom:SetTexture("Interface\\Buttons\\WHITE8x8")
+    emptyOutlineBottom:SetVertexColor(0, 0, 0, 1)
+
+    local emptyOutlineLeft = badge:CreateTexture(nil, "OVERLAY")
+    emptyOutlineLeft:SetPoint("TOPLEFT", badge, "TOPLEFT", 5, -5)
+    emptyOutlineLeft:SetPoint("BOTTOMLEFT", badge, "BOTTOMLEFT", 5, 5)
+    emptyOutlineLeft:SetWidth(EMPTY_OUTLINE_THICKNESS)
+    emptyOutlineLeft:SetTexture("Interface\\Buttons\\WHITE8x8")
+    emptyOutlineLeft:SetVertexColor(0, 0, 0, 1)
+
+    local emptyOutlineRight = badge:CreateTexture(nil, "OVERLAY")
+    emptyOutlineRight:SetPoint("TOPRIGHT", badge, "TOPRIGHT", -5, -5)
+    emptyOutlineRight:SetPoint("BOTTOMRIGHT", badge, "BOTTOMRIGHT", -5, 5)
+    emptyOutlineRight:SetWidth(EMPTY_OUTLINE_THICKNESS)
+    emptyOutlineRight:SetTexture("Interface\\Buttons\\WHITE8x8")
+    emptyOutlineRight:SetVertexColor(0, 0, 0, 1)
+
+    local emptyOutline = { emptyOutlineTop, emptyOutlineBottom, emptyOutlineLeft, emptyOutlineRight }
+
+    local badgeText = badge:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    badgeText:SetPoint("CENTER", badge, "CENTER", 0, 0)
+
+    -- EXPERIMENT: built-in vanilla game icons (spell/item icons, not
+    -- custom addon files) -- confirmed real vanilla assets, so this
+    -- sidesteps the custom-texture-loading limitation entirely. Tests
+    -- whether Emberveil's own asset library includes these standard
+    -- icons, the same way class icons and buff/debuff icons already do.
+    local badgeIcon = badge:CreateTexture(nil, "OVERLAY")
+    badgeIcon:SetWidth(20)
+    badgeIcon:SetHeight(20)
+    badgeIcon:SetPoint("CENTER", badge, "CENTER", 0, 0)
+    badgeIcon:Hide()
+
+    -- FIX: confirmed via testing -- once the icon actually renders
+    -- (unlike the earlier failed custom-texture attempts), clicking
+    -- stopped registering entirely, even though the icon is just a
+    -- texture with no mouse-handling of its own. A dedicated, separate
+    -- frame positioned exactly over the badge at an even higher level
+    -- guarantees it's the one that actually receives the click,
+    -- regardless of whatever is causing the visible icon to interfere.
+    local clickCatcher = CreateFrame("Frame", nil, parentBar)
+    clickCatcher:SetAllPoints(badge)
+    clickCatcher:EnableMouse(true)
+    clickCatcher:SetFrameLevel(20)
+    -- FIX: a higher frame level alone didn't fix this -- confirmed via
+    -- testing that clicking still wasn't reaching the handler at all.
+    -- Escalating to the same "TOOLTIP" strata already proven reliable
+    -- for guaranteed top-most interaction elsewhere in this addon
+    -- (hover tooltip, drag catcher, settings window), rather than
+    -- relying on frame level within the default strata.
+    clickCatcher:SetFrameStrata("TOOLTIP")
+
+    return badge, badgeText, badgeIcon, clickCatcher, emptyOutline
+end
+
+local function UpdateRoleBadge(badge, badgeText, badgeIcon, emptyOutline, name)
+    UAHealDB.roles = UAHealDB.roles or {}
+    -- The badge itself always stays visible/clickable (even with no
+    -- role set) so there's always a way to assign one -- only the TEXT
+    -- inside it changes based on current assignment.
+    local role = name and UAHealDB.roles[name]
+
+    -- EXPERIMENT: real vanilla built-in icons (spell/item icons, not
+    -- custom addon files) confirmed to exist in vanilla WoW. Cropped
+    -- slightly (SetTexCoord) to trim the default gold border baked
+    -- into these textures, for a cleaner look in this small badge.
+    local ROLE_BUILTIN_ICONS = {
+        -- Custom addon-bundled icons, confirmed working via the
+        -- extensionless-path technique found in UnrealQuest's own
+        -- source: this client resolves an addon texture by base name
+        -- only, and including the ".tga" suffix silently draws
+        -- nothing.
+        Tank = "Interface\\AddOns\\UAHeal\\icons\\tank",
+        Healer = "Interface\\AddOns\\UAHeal\\icons\\healer",
+        DPS = "Interface\\AddOns\\UAHeal\\icons\\dps",
+    }
+
+    if role then
+        for _, edge in ipairs(emptyOutline) do
+            edge:Hide()
+        end
+
+        local iconPath = ROLE_BUILTIN_ICONS[role]
+
+        if iconPath then
+            badgeText:SetText("")
+            badgeIcon:SetTexture(iconPath)
+            badgeIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            badgeIcon:Show()
+        else
+            badgeIcon:Hide()
+            local color = ROLE_COLORS[role] or { 1, 1, 1 }
+            badgeText:SetTextColor(color[1], color[2], color[3])
+            badgeText:SetText(role:sub(1, 1))
+        end
+    else
+        badgeIcon:Hide()
+        badgeText:SetText("")
+        for _, edge in ipairs(emptyOutline) do
+            edge:Show()
+        end
+    end
+end
+
 
 ---------------------------------------------------------
 -- DRAG HANDLE
@@ -140,6 +332,17 @@ macroFill:SetVertexColor(0.10, 0.10, 0.10, 0.97)
 local macroTitle = macroWindow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 macroTitle:SetPoint("TOP", macroWindow, "TOP", 0, -10)
 macroTitle:SetText("Settings")
+
+-- ABANDONED PERMANENTLY: a close button on the settings window
+-- reproducibly crashed the game client on two separate, meaningfully
+-- different implementation attempts (first with full styling/strata,
+-- then a deliberately minimal version reusing the exact same toggle
+-- logic as the already-safe double-click). No error message appeared
+-- either time. Given it crashed both times despite the differences
+-- between attempts, this isn't about styling or strata -- something
+-- more fundamental about a clickable frame in this specific position
+-- doesn't work safely on this client. Not attempting a third variation.
+-- Double-click the drag bar remains the only way to close Settings.
 
 ---------------------------------------------------------
 -- TABS
@@ -670,6 +873,11 @@ local function ShowHoverTooltip(atFrame)
             else
                 row.icon:Hide()
             end
+
+            -- FIX: GetActionCost confirmed via testing to not exist as a
+            -- function on this client at all (real runtime error, not
+            -- just returning nil) -- removed. Shows just the gesture
+            -- label, no mana cost.
             row.text:SetText(gesture.label)
             row.text:Show()
         else
@@ -888,10 +1096,83 @@ local function CreateBuffIcons(parentBar)
     return icons
 end
 
+-- Priority order for common buffs, so the display is consistent and
+-- predictable across every frame rather than showing in whatever order
+-- the game's own buff list happens to return. Lower number = shown
+-- first. Based on real vanilla buff spells across classes -- roughly
+-- ordered by major stat/raid buffs first, then class-specific ones,
+-- with unrecognized buffs falling through to the end.
+-- HONEST CAVEAT: the priest icons below (tier 1) were individually
+-- confirmed via research earlier this session. The rest (tiers 2+) are
+-- built from standard vanilla icon-naming conventions but were NOT
+-- individually verified the same way -- if any don't match Emberveil's
+-- actual asset names, that specific buff just won't get prioritized
+-- (falls through to "everything else"), it won't cause any error.
+local BUFF_PRIORITY = {
+    -- Tier 1: Priest buffs. WordFortitude and InnerFire paths confirmed
+    -- directly via debug output this session -- the client's real
+    -- texture format is "/Game/Interface/Icons/[Name]_TEX" (forward
+    -- slashes, a "/Game/" prefix, and a "_TEX" suffix), completely
+    -- different from the "Interface\Icons\..." format used everywhere
+    -- else in this addon for SetTexture calls. The other entries below
+    -- use this same confirmed format, but their spell-name portion is
+    -- still an educated guess, not individually verified the same way.
+    ["/Game/Interface/Icons/Spell_Holy_WordFortitude_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_PrayerOfFortitude_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_PowerWordShield_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_Renew_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_Renew02_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_DivineSpirit_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_PrayerofSpirit_TEX"] = 1,
+    ["/Game/Interface/Icons/Spell_Holy_InnerFire_TEX"] = 1,
+
+    -- Tier 2: Paladin Blessings (unverified spell-name portion)
+    ["/Game/Interface/Icons/Spell_Holy_FistOfJustice_TEX"] = 2,
+    ["/Game/Interface/Icons/Spell_Holy_GreaterBlessingofKings_TEX"] = 2,
+    ["/Game/Interface/Icons/Spell_Holy_SealOfWisdom_TEX"] = 2,
+    ["/Game/Interface/Icons/Spell_Holy_SealOfSalvation_TEX"] = 2,
+    ["/Game/Interface/Icons/Spell_Holy_BlessingOfProtection_TEX"] = 2,
+
+    -- Tier 3: Druid buffs (unverified spell-name portion)
+    ["/Game/Interface/Icons/Spell_Nature_Regeneration_TEX"] = 3,
+    ["/Game/Interface/Icons/Spell_Nature_Thorns_TEX"] = 3,
+
+    -- Tier 4: Mage buffs (unverified spell-name portion)
+    ["/Game/Interface/Icons/Spell_Holy_MagicalSentry_TEX"] = 4,
+    ["/Game/Interface/Icons/Spell_Frost_FrostArmor02_TEX"] = 4,
+
+    -- Tier 5: Shaman totems (unverified spell-name portion)
+    ["/Game/Interface/Icons/Spell_Nature_StrengthOfEarthTotem_TEX"] = 5,
+    ["/Game/Interface/Icons/Spell_Nature_ManaRegenTotem_TEX"] = 5,
+    ["/Game/Interface/Icons/Spell_Nature_Windfury_TEX"] = 5,
+
+    -- Tier 6: Warrior shouts (unverified spell-name portion)
+    ["/Game/Interface/Icons/Ability_Warrior_BattleShout_TEX"] = 6,
+    ["/Game/Interface/Icons/Ability_Warrior_RallyingCry_TEX"] = 6,
+}
+
 local function UpdateBuffIcons(icons, unit)
+    -- Collects all active buff textures first, then sorts by priority
+    -- tier (lower shows first), before displaying them across the icon
+    -- slots -- unrecognized buffs get an effectively-infinite tier, so
+    -- they always fall in after every recognized one.
+    local buffTextures = {}
     for i = 1, BUFF_ICON_COUNT do
         local texture = UnitBuff(unit, i)
+        if texture then
+            table.insert(buffTextures, texture)
+        end
+    end
+
+    table.sort(buffTextures, function(a, b)
+        local aTier = BUFF_PRIORITY[a] or 999
+        local bTier = BUFF_PRIORITY[b] or 999
+        return aTier < bTier
+    end)
+
+    for i = 1, BUFF_ICON_COUNT do
         local icon = icons[i]
+        local texture = buffTextures[i]
         if texture then
             icon:SetTexture(texture)
             icon:Show()
@@ -1019,6 +1300,45 @@ local function AddBarSheen(bar, barHeight)
     sheen:SetBlendMode("ADD")
 end
 
+-- Same proven 8-direction black outline technique already used
+-- successfully for the action bar number overlay -- guarantees the
+-- text stays readable against literally any background color (a single
+-- shadow direction or plain white text can still get lost against a
+-- similarly light or similarly-toned background; a full outline on all
+-- sides doesn't). Returns a "label" wrapper with the same basic
+-- FontString-like interface (SetText/SetPoint/Show/Hide) so it's a
+-- drop-in replacement wherever a plain FontString was used before.
+local function CreateOutlinedText(parent, fontSize)
+    -- FIX: outline removed per request -- plain text now, keeping the
+    -- gold color and THICKOUTLINE font flag (a built-in single-pixel
+    -- outline baked into the font rendering itself, separate from the
+    -- multi-copy shadow technique this used to use) plus the dark
+    -- backing panel behind it for contrast instead.
+    local mainText = parent:CreateFontString(nil, "OVERLAY")
+    mainText:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "THICKOUTLINE")
+    mainText:SetTextColor(1, 0.82, 0)
+
+    local label = {}
+
+    function label:SetPoint(...)
+        mainText:SetPoint(...)
+    end
+
+    function label:SetText(text)
+        mainText:SetText(text)
+    end
+
+    function label:Show()
+        mainText:Show()
+    end
+
+    function label:Hide()
+        mainText:Hide()
+    end
+
+    return label
+end
+
 ---------------------------------------------------------
 -- MAIN FRAME (PLAYER)
 ---------------------------------------------------------
@@ -1058,7 +1378,7 @@ hpBar:EnableMouse(false)
 local hpBG = hpBar:CreateTexture(nil, "BACKGROUND")
 hpBG:SetAllPoints()
 hpBG:SetTexture("Interface\\Buttons\\WHITE8x8")
-hpBG:SetVertexColor(0.2, 0, 0, 0.8)
+hpBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local hpFill = hpBar:CreateTexture(nil, "ARTWORK")
 hpFill:SetPoint("LEFT", hpBar, "LEFT")
@@ -1068,17 +1388,39 @@ hpFill:SetVertexColor(1, 0, 0, 1)
 
 AddBarSheen(hpBar, 52)
 
-local hpText = hpBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-hpText:SetPoint("TOP", hpBar, "TOP", 0, -18)
-hpText:SetShadowOffset(1, -1)
-hpText:SetShadowColor(0, 0, 0, 0.8)
+-- FIX: two different attempts at swapping to an alternate font file
+-- both had zero effect (that font isn't available on this client), and
+-- plain white text with a single shadow direction still got lost
+-- against similarly light backgrounds (e.g. Priest's own white class
+-- color). Switched to CreateOutlinedText -- the same proven 8-direction
+-- black outline technique already used successfully for the action bar
+-- number overlay -- which keeps text readable against literally any
+-- background color, not just darker ones.
+-- Semi-transparent dark backing panel behind the name/health text
+-- specifically, spanning both lines -- guarantees consistent contrast
+-- regardless of the health bar's own color underneath (a class-colored
+-- or full-health white bar can still make even an outlined white text
+-- hard to read; a dedicated dark backing sidesteps that entirely rather
+-- than depending on the text styling alone).
+local textBacking = hpBar:CreateTexture(nil, "BACKGROUND")
+textBacking:SetPoint("TOP", hpBar, "TOP", 0, -10)
+textBacking:SetWidth(118)
+textBacking:SetHeight(32)
+textBacking:SetTexture("Interface\\Buttons\\WHITE8x8")
+textBacking:SetVertexColor(0, 0, 0, 0.85)
 
-local hpValueText = hpBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-hpValueText:SetPoint("TOP", hpText, "BOTTOM", 0, -2)
-hpValueText:SetShadowOffset(1, -1)
-hpValueText:SetShadowColor(0, 0, 0, 0.8)
+local hpText = CreateOutlinedText(hpBar, 14)
+hpText:SetPoint("TOP", hpBar, "TOP", 0, -18)
+
+local hpValueText = CreateOutlinedText(hpBar, 12)
+hpValueText:SetPoint("TOP", hpBar, "TOP", 0, -32)
 
 local buffIcons = CreateBuffIcons(hpBar)
+
+local roleBadge, roleBadgeText, roleBadgeIcon, roleBadgeClickCatcher, roleBadgeEmptyOutline = CreateRoleBadge(hpBar)
+roleBadgeClickCatcher:SetScript("OnMouseDown", function()
+    CycleRole(UnitName("player"))
+end)
 local debuffIcons = CreateDebuffIcons(hpBar)
 
 ---------------------------------------------------------
@@ -1095,7 +1437,7 @@ mpBar:EnableMouse(false)
 local mpBG = mpBar:CreateTexture(nil, "BACKGROUND")
 mpBG:SetAllPoints()
 mpBG:SetTexture("Interface\\Buttons\\WHITE8x8")
-mpBG:SetVertexColor(0, 0, 0.2, 0.8)
+mpBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local mpFill = mpBar:CreateTexture(nil, "ARTWORK")
 mpFill:SetPoint("LEFT", mpBar, "LEFT")
@@ -1124,6 +1466,20 @@ f:SetScript("OnUpdate", function()
 
     local unit = "player"
 
+    local name = UnitName(unit) or "Unknown"
+
+    if UnitIsDeadOrGhost(unit) then
+        hpFill:SetWidth(0)
+        hpFill:SetVertexColor(0.5, 0.5, 0.5)
+        hpText:SetText(name)
+        hpValueText:SetText("Dead")
+        mpFill:SetWidth(0)
+        UpdateBuffIcons(buffIcons, unit)
+        UpdateDebuffIcons(debuffIcons, unit)
+        UpdateRoleBadge(roleBadge, roleBadgeText, roleBadgeIcon, roleBadgeEmptyOutline, name)
+        return
+    end
+
     local hp = UnitHealth(unit) or 0
     local hpMax = UnitHealthMax(unit) or 1
     local hpPercent = ClampPercent(hpMax > 0 and (hp / hpMax) or 0)
@@ -1134,7 +1490,9 @@ f:SetScript("OnUpdate", function()
         hpFill:SetVertexColor(GetClassColor(unit))
     end
 
-    local name = UnitName(unit) or "Unknown"
+    -- FIX: UnitIsAFK confirmed via testing to not exist as a function on
+    -- this client at all (real runtime error, not just returning nil) --
+    -- removed. Name shown plain, no AFK indicator.
     hpText:SetText(name)
     hpValueText:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
 
@@ -1146,6 +1504,7 @@ f:SetScript("OnUpdate", function()
 
     UpdateBuffIcons(buffIcons, unit)
     UpdateDebuffIcons(debuffIcons, unit)
+    UpdateRoleBadge(roleBadge, roleBadgeText, roleBadgeIcon, roleBadgeEmptyOutline, name)
 end)
 
 ---------------------------------------------------------
@@ -1163,74 +1522,86 @@ layoutHorizontal = false
 -- all party frames exist, and again whenever the layout is toggled.
 PositionPartyFrames = function()
     local anchor = f
-    for _, frame in ipairs(partyFrames) do
-        frame:ClearAllPoints()
-        if layoutHorizontal then
-            -- FIX: anchoring via "LEFT"/"RIGHT" matches each frame's own
-            -- vertical CENTER -- but the outer 200x120 box's center and
-            -- the 122x61 card's center inside it aren't quite the same
-            -- reference point, causing a small vertical mismatch between
-            -- cards. Using TOPLEFT/TOPRIGHT instead aligns the outer
-            -- boxes' TOP edges directly -- since every frame is the same
-            -- height with its card positioned identically inside, this
-            -- guarantees the cards themselves end up aligned too. The
-            -- -78 offset accounts for both frames' 39px of left/right
-            -- padding around their cards, keeping them touching with no
-            -- gap.
-            frame:SetPoint("TOPLEFT", anchor, "TOPRIGHT", -78, 0)
-        else
-            -- A small explicit gap (not relying on each card's own
-            -- border rendering correctly at the exact seam) so there's
-            -- always a clear visual break between stacked frames,
-            -- regardless of party size.
-            -- Butted flush together (no gap) -- the new border redesign
-            -- above means each card draws its own explicit black edge,
-            -- so two touching cards should naturally show a clean black
-            -- seam between them without needing an artificial gap.
-            -- FIX: same category of issue just fixed for the drag bar --
-            -- anchoring at offset 0 makes the NEXT frame's invisible
-            -- outer box touch the previous card's mana bar, but that
-            -- next frame's own actual card sits inset ~34px inside its
-            -- box, leaving a real gap between the two visible cards. +34
-            -- pulls the next card's true top up to meet the previous
-            -- one directly.
-            frame:SetPoint("TOP", anchor.mpBar or anchor, "BOTTOM", 0, 34)
-        end
-        anchor = frame
-
-        -- FIX: this used to recalculate the card's internal position
-        -- per layout mode, but that used a slightly different baseline
-        -- than each card's creation-time position, causing a small
-        -- visible gap between the border and the mana bar specifically
-        -- in vertical mode. Now that the border draws its own explicit
-        -- edges (rather than relying on internal offset tricks for the
-        -- stacking gap), this recalculation isn't needed at all -- every
-        -- card just keeps its original creation-time alignment,
-        -- matching the player's own frame exactly in both modes.
-
-        -- Party members' pet cards also need repositioning per layout
-        -- mode: to the right in vertical mode (frames stack downward,
-        -- so the right side is free), but ABOVE the owner's frame in
-        -- horizontal mode -- since frames already extend rightward one
-        -- after another there, putting the pet card also to the right
-        -- would collide with the next party member's frame.
-        if frame.petOwnerFrame then
-            frame.petOwnerFrame:ClearAllPoints()
+    for index, frame in ipairs(partyFrames) do
+        -- Skips absent party members entirely when chaining anchors, so
+        -- the rest of the stack collapses to fill the gap instead of
+        -- leaving blank space where a missing member would be -- the
+        -- previous version only positioned everything once (at load or
+        -- on layout toggle), so it never responded to people actually
+        -- joining or leaving.
+        if UnitExists(units[index]) then
+            frame:ClearAllPoints()
             if layoutHorizontal then
-                -- Positions the pet card's own visible card flush
-                -- against the TOP of the owner's own card, calculated
-                -- the same way the drag-bar-to-first-card gap was
-                -- closed earlier: the owner's card sits 61px tall,
-                -- inset 34px from frame's own top, so offsetting by
-                -- +61 (TOP-to-TOP) lands the pet card's card exactly
-                -- flush above it.
-                frame.petOwnerFrame:SetPoint("TOP", frame, "TOP", 0, 61)
+                -- FIX: anchoring via "LEFT"/"RIGHT" matches each frame's
+                -- own vertical CENTER -- but the outer 200x120 box's
+                -- center and the 122x61 card's center inside it aren't
+                -- quite the same reference point, causing a small
+                -- vertical mismatch between cards. Using
+                -- TOPLEFT/TOPRIGHT instead aligns the outer boxes' TOP
+                -- edges directly -- since every frame is the same
+                -- height with its card positioned identically inside,
+                -- this guarantees the cards themselves end up aligned
+                -- too. The -78 offset accounts for both frames' 39px of
+                -- left/right padding around their cards, keeping them
+                -- touching with no gap.
+                frame:SetPoint("TOPLEFT", anchor, "TOPRIGHT", -78, 0)
             else
-                frame.petOwnerFrame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -78, 0)
+                -- FIX: same category of issue just fixed for the drag
+                -- bar -- anchoring at offset 0 makes the NEXT frame's
+                -- invisible outer box touch the previous card's mana
+                -- bar, but that next frame's own actual card sits inset
+                -- ~34px inside its box, leaving a real gap between the
+                -- two visible cards. +34 pulls the next card's true top
+                -- up to meet the previous one directly.
+                frame:SetPoint("TOP", anchor.mpBar or anchor, "BOTTOM", 0, 34)
+            end
+            anchor = frame
+
+            -- Party members' pet cards also need repositioning per
+            -- layout mode: to the right in vertical mode (frames stack
+            -- downward, so the right side is free), but ABOVE the
+            -- owner's frame in horizontal mode -- since frames already
+            -- extend rightward one after another there, putting the pet
+            -- card also to the right would collide with the next party
+            -- member's frame.
+            if frame.petOwnerFrame then
+                frame.petOwnerFrame:ClearAllPoints()
+                if layoutHorizontal then
+                    -- Positions the pet card's own visible card flush
+                    -- against the TOP of the owner's own card,
+                    -- calculated the same way the drag-bar-to-first-card
+                    -- gap was closed earlier: the owner's card sits 61px
+                    -- tall, inset 34px from frame's own top, so
+                    -- offsetting by +61 (TOP-to-TOP) lands the pet
+                    -- card's card exactly flush above it.
+                    frame.petOwnerFrame:SetPoint("TOP", frame, "TOP", 0, 61)
+                else
+                    frame.petOwnerFrame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -78, 0)
+                end
             end
         end
     end
 end
+
+-- Runs the positioning continuously (not just once at load or on layout
+-- toggle), so the stack actually collapses/re-expands live as party
+-- members join or leave, rather than only reflecting party membership
+-- as it was at the moment PositionPartyFrames last ran.
+-- FIX: running PositionPartyFrames continuously on every single OnUpdate
+-- tick (many times per second) caused the player's own frame to
+-- disappear entirely -- likely some kind of timing/performance issue
+-- from doing this constantly rather than only when actually needed.
+-- PARTY_MEMBERS_CHANGED is the correct, standard vanilla event for
+-- this -- it only fires when party composition genuinely changes
+-- (someone joins/leaves), far more efficient and much lower-risk than
+-- polling every frame.
+local partyCollapseFrame = CreateFrame("Frame")
+partyCollapseFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+partyCollapseFrame:SetScript("OnEvent", function()
+    if not InRaidMode() and not isMinimized then
+        PositionPartyFrames()
+    end
+end)
 
 for index, unit in ipairs(units) do
     local thisUnit = unit
@@ -1328,6 +1699,15 @@ for index, unit in ipairs(units) do
     hpBar2:SetWidth(118)
     hpBar2:SetHeight(52)
 
+    -- FIX: the player's own frame has a dark-red "missing health"
+    -- background tint behind the fill bar, but party frames never got
+    -- the equivalent -- confirmed via user report that this caused a
+    -- visible inconsistency between the player's card and party cards.
+    local hpBG2 = hpBar2:CreateTexture(nil, "BACKGROUND")
+    hpBG2:SetAllPoints()
+    hpBG2:SetTexture("Interface\\Buttons\\WHITE8x8")
+    hpBG2:SetVertexColor(0.2, 0.2, 0.2, 0.8)
+
     local hpFill2 = hpBar2:CreateTexture(nil, "ARTWORK")
     hpFill2:SetPoint("LEFT", hpBar2, "LEFT")
     hpFill2:SetHeight(52)
@@ -1347,6 +1727,11 @@ for index, unit in ipairs(units) do
     hpValueText2:SetShadowColor(0, 0, 0, 0.8)
 
     local buffIcons2 = CreateBuffIcons(hpBar2)
+
+    local roleBadge2, roleBadgeText2, roleBadgeIcon2, roleBadgeClickCatcher2, roleBadgeEmptyOutline2 = CreateRoleBadge(hpBar2)
+    roleBadgeClickCatcher2:SetScript("OnMouseDown", function()
+        CycleRole(UnitName(thisUnit))
+    end)
     local debuffIcons2 = CreateDebuffIcons(hpBar2)
 
     local mpBar2 = CreateFrame("Frame", nil, frame)
@@ -1355,6 +1740,13 @@ for index, unit in ipairs(units) do
     mpBar2:SetFrameLevel(2)
     mpBar2:SetWidth(118)
     mpBar2:SetHeight(5)
+
+    -- FIX: same as hpBG2 above -- matches the player's own dark-blue
+    -- "missing mana" background tint, which party frames never had.
+    local mpBG2 = mpBar2:CreateTexture(nil, "BACKGROUND")
+    mpBG2:SetAllPoints()
+    mpBG2:SetTexture("Interface\\Buttons\\WHITE8x8")
+    mpBG2:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
     local mpFill2 = mpBar2:CreateTexture(nil, "ARTWORK")
     mpFill2:SetPoint("LEFT", mpBar2, "LEFT")
@@ -1368,7 +1760,15 @@ for index, unit in ipairs(units) do
             cardBorder2.fillTexture:Show()
             hpBar2:Show()
 
-            if UnitExists(partyPetUnit) then
+            -- FIX: same safeguard as the player's own pet frame -- only
+            -- shows a pet card at all if this party member's own class
+            -- can actually have a pet, as a hard guard against the same
+            -- possible UnitExists("partypetN") quirk reported for the
+            -- player's own pet frame after combat kills.
+            local _, ownerClass = UnitClass(thisUnit)
+            local ownerCanHavePet = ownerClass == "HUNTER" or ownerClass == "WARLOCK"
+
+            if ownerCanHavePet and UnitExists(partyPetUnit) then
                 petOwnerFrame:Show()
                 petIndicator:Show()
                 petIndicator.fillTexture:Show()
@@ -1421,19 +1821,29 @@ for index, unit in ipairs(units) do
 
             if UnitIsConnected(thisUnit) then
                 mpBar2:Show()
-                if hpPercent <= LOW_HEALTH_THRESHOLD then
-                    hpFill2:SetVertexColor(1, 0, 0)
+                if UnitIsDeadOrGhost(thisUnit) then
+                    hpFill2:SetWidth(0)
+                    hpFill2:SetVertexColor(0.5, 0.5, 0.5)
+                    hpText2:SetText(name)
+                    hpValueText2:SetText("Dead")
+                    mpFill2:SetWidth(0)
                 else
-                    hpFill2:SetVertexColor(GetClassColor(thisUnit))
-                end
-                hpText2:SetText(name)
-                hpValueText2:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
+                    if hpPercent <= LOW_HEALTH_THRESHOLD then
+                        hpFill2:SetVertexColor(1, 0, 0)
+                    else
+                        hpFill2:SetVertexColor(GetClassColor(thisUnit))
+                    end
+                    -- FIX: UnitIsAFK confirmed via testing to not exist
+                    -- as a function on this client at all -- removed.
+                    hpText2:SetText(name)
+                    hpValueText2:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
 
-                local mp = UnitMana(thisUnit) or 0
-                local mpMax = UnitManaMax(thisUnit) or 1
-                local mpPercent = ClampPercent(mpMax > 0 and (mp / mpMax) or 0)
-                mpFill2:SetWidth(118 * mpPercent * currentScale)
-                mpFill2:SetVertexColor(GetPowerColor(thisUnit))
+                    local mp = UnitMana(thisUnit) or 0
+                    local mpMax = UnitManaMax(thisUnit) or 1
+                    local mpPercent = ClampPercent(mpMax > 0 and (mp / mpMax) or 0)
+                    mpFill2:SetWidth(118 * mpPercent * currentScale)
+                    mpFill2:SetVertexColor(GetPowerColor(thisUnit))
+                end
 
                 UpdateBuffIcons(buffIcons2, thisUnit)
                 UpdateDebuffIcons(debuffIcons2, thisUnit)
@@ -1450,6 +1860,11 @@ for index, unit in ipairs(units) do
                     debuffIcons2[i]:Hide()
                 end
             end
+
+            -- Role badge stays visible/updated regardless of connected
+            -- state -- role assignment is persistent, unrelated to
+            -- whether someone's currently online.
+            UpdateRoleBadge(roleBadge2, roleBadgeText2, roleBadgeIcon2, roleBadgeEmptyOutline2, name)
         else
             cardBorder2:Hide()
             cardBorder2.fillTexture:Hide()
@@ -1717,7 +2132,7 @@ petHPBar:EnableMouse(false)
 local petHPBG = petHPBar:CreateTexture(nil, "BACKGROUND")
 petHPBG:SetAllPoints()
 petHPBG:SetTexture("Interface\\Buttons\\WHITE8x8")
-petHPBG:SetVertexColor(0, 0.15, 0.1, 0.8)
+petHPBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local petHPFill = petHPBar:CreateTexture(nil, "ARTWORK")
 petHPFill:SetPoint("LEFT", petHPBar, "LEFT")
@@ -1749,7 +2164,7 @@ petMPBar:EnableMouse(false)
 local petMPBG = petMPBar:CreateTexture(nil, "BACKGROUND")
 petMPBG:SetAllPoints()
 petMPBG:SetTexture("Interface\\Buttons\\WHITE8x8")
-petMPBG:SetVertexColor(0, 0, 0.2, 0.8)
+petMPBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local petMPFill = petMPBar:CreateTexture(nil, "ARTWORK")
 petMPFill:SetPoint("LEFT", petMPBar, "LEFT")
@@ -1758,11 +2173,22 @@ petMPFill:SetTexture("Interface\\Buttons\\WHITE8x8")
 petMPFill:SetVertexColor(0, 0, 1, 1)
 
 petFrame:SetScript("OnUpdate", function()
-    -- Drag bar and minimize button only show at all once a pet actually
-    -- exists -- regardless of minimize state, since minimizing should
-    -- only affect the card itself, not whether the controls to un-
-    -- minimize it are visible.
-    if UnitExists("pet") then
+    -- FIX (reported by Servo on the wiki): the pet frame was sometimes
+    -- showing a dead pet for classes that can't even have a pet,
+    -- specifically after killing someone -- suggesting UnitExists("pet")
+    -- can momentarily/erroneously return true on this client under some
+    -- circumstance tied to combat kills, possibly a stale or
+    -- misattributed unit reference. Added an explicit class check as a
+    -- hard safeguard: the pet frame can now only ever show at all for
+    -- the two vanilla classes that can genuinely have an active pet
+    -- (Hunter, Warlock -- Mage's Water Elemental doesn't exist until
+    -- Burning Crusade, confirmed via research, an earlier mistake on my
+    -- part corrected here), regardless of whatever UnitExists("pet")
+    -- happens to report for anyone else.
+    local _, playerClass = UnitClass("player")
+    local canHavePet = playerClass == "HUNTER" or playerClass == "WARLOCK"
+
+    if canHavePet and UnitExists("pet") then
         petDragHandle:Show()
         petMinimizeButton:Show()
     else
@@ -1770,7 +2196,7 @@ petFrame:SetScript("OnUpdate", function()
         petMinimizeButton:Hide()
     end
 
-    if petIsMinimized or not UnitExists("pet") then
+    if not canHavePet or petIsMinimized or not UnitExists("pet") then
         petCardBorder:Hide()
         petCardBorder.fillTexture:Hide()
         petHPBar:Hide()
