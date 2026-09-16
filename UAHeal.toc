@@ -3,5 +3,4 @@
 ## Notes: Click-to-heal party/raid frames with health, mana, buffs, and class icons
 ## Author: Kylknol
 ## Version: 1.0
-## SavedVariables: UAHealDB
 UAHeal.lua
