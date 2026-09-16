@@ -347,9 +347,9 @@ local function CreateBuffIcons(parentBar)
         icon:SetWidth(BUFF_ICON_SIZE)
         icon:SetHeight(BUFF_ICON_SIZE)
         if i == 1 then
-            icon:SetPoint("TOPLEFT", parentBar, "TOPLEFT", 2, -2)
+            icon:SetPoint("TOPLEFT", parentBar, "TOPLEFT", 0, 0)
         else
-            icon:SetPoint("LEFT", icons[i - 1], "RIGHT", 1, 0)
+            icon:SetPoint("LEFT", icons[i - 1], "RIGHT", 0, 0)
         end
         icon:Hide()
         icons[i] = icon
