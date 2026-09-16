@@ -1,4 +1,25 @@
 ---------------------------------------------------------
+-- GLOBAL UI CONFIGURATION
+---------------------------------------------------------
+local UI_CONFIG = {
+    -- 玩家与小队血条尺寸
+    UNIT_WIDTH  = 70, -- 框架/血条宽度
+    HP_HEIGHT   = 45,  -- 血条高度
+    MP_HEIGHT   = 5,   -- 蓝条/能量条高度
+    BAR_GAP     = 0,   -- 间隙
+
+    -- 团队框架尺寸 (40人面板)
+    RAID_WIDTH  = 80,  -- 团队单格宽度
+    RAID_HEIGHT = 24,  -- 团队单格高度
+
+    -- 顶部拖拽条尺寸
+    DRAG_WIDTH  = 60, -- 拖拽条宽度
+    DRAG_HEIGHT = 16,  -- 拖拽条高度
+}
+
+local TOTAL_BORDER_HEIGHT = UI_CONFIG.HP_HEIGHT + UI_CONFIG.MP_HEIGHT + UI_CONFIG.BAR_GAP
+
+---------------------------------------------------------
 -- RUNTIME DATA (NO PERSISTENCE)
 ---------------------------------------------------------
 local runtimeRoles = {}
@@ -8,6 +29,9 @@ local ROLE_COLORS = {
     Healer = { 0.3, 1, 0.4 },
     DPS = { 1, 0.3, 0.3 },
 }
+
+local currentScale = 1.0
+local layoutHorizontal = false
 
 local function CycleRole(name)
     if not name then return end
@@ -35,8 +59,8 @@ end
 
 local function CreateRoleBadge(parentBar)
     local badge = CreateFrame("Frame", nil, parentBar)
-    badge:SetWidth(30)
-    badge:SetHeight(30)
+    badge:SetWidth(20)
+    badge:SetHeight(20)
     badge:SetPoint("TOPRIGHT", parentBar, "TOPRIGHT", 0, 0)
     badge:EnableMouse(true)
     badge:SetFrameLevel(15)
@@ -46,7 +70,7 @@ local function CreateRoleBadge(parentBar)
     badgeBG:SetTexture("Interface\\Buttons\\WHITE8x8")
     badgeBG:SetVertexColor(0, 0, 0, 0)
 
-    local EMPTY_OUTLINE_THICKNESS = 1
+    local EMPTY_OUTLINE_THICKNESS = 0
     local emptyOutlineTop = badge:CreateTexture(nil, "OVERLAY")
     emptyOutlineTop:SetPoint("TOPLEFT", badge, "TOPLEFT", 5, -5)
     emptyOutlineTop:SetPoint("TOPRIGHT", badge, "TOPRIGHT", -5, -5)
@@ -132,17 +156,16 @@ local function UpdateRoleBadge(badge, badgeText, badgeIcon, emptyOutline, name)
 end
 
 ---------------------------------------------------------
--- DRAG HANDLE
+-- DRAG HANDLE (CENTER POSITIONED)
 ---------------------------------------------------------
 
 local dragHandle = CreateFrame("Frame", "UAHealDragHandle", UIParent)
 dragHandle:SetFrameStrata("LOW")
-dragHandle:SetWidth(100)
-dragHandle:SetHeight(16)
-dragHandle:SetPoint("TOP", UIParent, "TOP", 0, -200)
+dragHandle:SetWidth(UI_CONFIG.DRAG_WIDTH)
+dragHandle:SetHeight(UI_CONFIG.DRAG_HEIGHT)
+dragHandle:SetPoint("CENTER", UIParent, "CENTER", -300, 100)
 dragHandle:EnableMouse(true)
 
-local ApplyScale
 local PositionPartyFrames
 
 local function ApplyButtonBevel(frame)
@@ -186,8 +209,8 @@ local isMinimized = false
 
 local minimizeButton = CreateFrame("Frame", "UAHealMinimizeButton", UIParent)
 minimizeButton:SetFrameStrata("LOW")
-minimizeButton:SetWidth(16)
-minimizeButton:SetHeight(16)
+minimizeButton:SetWidth(UI_CONFIG.DRAG_HEIGHT)
+minimizeButton:SetHeight(UI_CONFIG.DRAG_HEIGHT)
 minimizeButton:SetPoint("LEFT", dragHandle, "RIGHT", 0, 0)
 minimizeButton:EnableMouse(true)
 ApplyButtonBevel(minimizeButton)
@@ -219,105 +242,6 @@ local function StopDrag()
 end
 
 ---------------------------------------------------------
--- SETTINGS WINDOW
----------------------------------------------------------
-
-local settingsWindow = CreateFrame("Frame", "UAHealSettingsWindow", UIParent)
-settingsWindow:SetWidth(200)
-settingsWindow:SetHeight(150)
-settingsWindow:SetFrameStrata("TOOLTIP")
-settingsWindow:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-settingsWindow:EnableMouse(true)
-settingsWindow:Hide()
-
-local settingsBorder = settingsWindow:CreateTexture(nil, "BACKGROUND")
-settingsBorder:SetAllPoints()
-settingsBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
-settingsBorder:SetVertexColor(0.03, 0.03, 0.03, 0.95)
-
-local settingsFill = settingsWindow:CreateTexture(nil, "BACKGROUND")
-settingsFill:SetPoint("TOPLEFT", settingsWindow, "TOPLEFT", 1, -1)
-settingsFill:SetPoint("BOTTOMRIGHT", settingsWindow, "BOTTOMRIGHT", -1, 1)
-settingsFill:SetTexture("Interface\\Buttons\\WHITE8x8")
-settingsFill:SetVertexColor(0.10, 0.10, 0.10, 0.97)
-
-local settingsTitle = settingsWindow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-settingsTitle:SetPoint("TOP", settingsWindow, "TOP", 0, -12)
-settingsTitle:SetText("Settings")
-
----------------------------------------------------------
--- SCALE & LAYOUT CONTROLS
----------------------------------------------------------
-
-local SCALE_MIN, SCALE_MAX, SCALE_STEP = 0.8, 2.0, 0.1
-local currentScale = 1.0
-
-local scaleValueText = settingsWindow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-scaleValueText:SetPoint("TOP", settingsTitle, "BOTTOM", 0, -20)
-scaleValueText:SetText("100%")
-
-local scaleMinusButton = CreateFrame("Frame", nil, settingsWindow)
-scaleMinusButton:SetWidth(28)
-scaleMinusButton:SetHeight(24)
-scaleMinusButton:SetPoint("RIGHT", scaleValueText, "LEFT", -20, 0)
-scaleMinusButton:EnableMouse(true)
-ApplyButtonBevel(scaleMinusButton)
-
-local scaleMinusText = scaleMinusButton:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-scaleMinusText:SetPoint("CENTER", scaleMinusButton, "CENTER", 0, 0)
-scaleMinusText:SetText("-")
-
-local scalePlusButton = CreateFrame("Frame", nil, settingsWindow)
-scalePlusButton:SetWidth(28)
-scalePlusButton:SetHeight(24)
-scalePlusButton:SetPoint("LEFT", scaleValueText, "RIGHT", 20, 0)
-scalePlusButton:EnableMouse(true)
-ApplyButtonBevel(scalePlusButton)
-
-local scalePlusText = scalePlusButton:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-scalePlusText:SetPoint("CENTER", scalePlusButton, "CENTER", 0, 0)
-scalePlusText:SetText("+")
-
-local function SetScaleValue(value)
-    if value < SCALE_MIN then value = SCALE_MIN end
-    if value > SCALE_MAX then value = SCALE_MAX end
-    value = math.floor(value * 10 + 0.5) / 10
-    currentScale = value
-    scaleValueText:SetText(math.floor(value * 100) .. "%")
-    ApplyScale(value)
-end
-
-scaleMinusButton:SetScript("OnMouseDown", function()
-    SetScaleValue(currentScale - SCALE_STEP)
-end)
-
-scalePlusButton:SetScript("OnMouseDown", function()
-    SetScaleValue(currentScale + SCALE_STEP)
-end)
-
-local layoutHorizontal = false
-local layoutButton = CreateFrame("Frame", nil, settingsWindow)
-layoutButton:SetWidth(160)
-layoutButton:SetHeight(20)
-layoutButton:SetPoint("TOP", scaleValueText, "BOTTOM", 0, -25)
-layoutButton:EnableMouse(true)
-ApplyButtonBevel(layoutButton)
-
-local layoutButtonText = layoutButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-layoutButtonText:SetPoint("CENTER", layoutButton, "CENTER", 0, 0)
-layoutButtonText:SetText("Layout: Vertical")
-
-layoutButton:SetScript("OnMouseDown", function()
-    layoutHorizontal = not layoutHorizontal
-    if layoutHorizontal then
-        layoutButtonText:SetText("Layout: Horizontal")
-    else
-        layoutButtonText:SetText("Layout: Vertical")
-    end
-    PositionPartyFrames()
-end)
-
----------------------------------------------------------
 -- TARGET ON CLICK ATTACHMENT
 ---------------------------------------------------------
 
@@ -331,23 +255,7 @@ local function AttachTargetOnClick(frame, getUnit)
     end)
 end
 
-local lastClickTime = 0
-local DOUBLE_CLICK_WINDOW = 1.0
-
 dragHandle:SetScript("OnMouseDown", function()
-    local now = GetTime()
-
-    if now - lastClickTime < DOUBLE_CLICK_WINDOW then
-        if settingsWindow:IsShown() then
-            settingsWindow:Hide()
-        else
-            settingsWindow:Show()
-        end
-        lastClickTime = 0
-        return
-    end
-
-    lastClickTime = now
     dragging = true
     dragCatcher:Show()
 end)
@@ -539,11 +447,11 @@ end
 ---------------------------------------------------------
 
 local function CreateCardBorder(parent, topOffset, blockHeight)
-    local BORDER_THICKNESS = 2
+    local BORDER_THICKNESS = 1
 
     local border = CreateFrame("Frame", nil, parent)
     border:SetPoint("TOP", parent, "TOP", 0, topOffset + 1)
-    border:SetWidth(122)
+    border:SetWidth(UI_CONFIG.UNIT_WIDTH + 4)
     border:SetHeight(blockHeight + 2)
     border:SetFrameLevel(10)
 
@@ -589,7 +497,7 @@ local function AddBarSheen(bar, barHeight)
     local sheen = bar:CreateTexture(nil, "OVERLAY")
     sheen:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
     sheen:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
-    sheen:SetHeight(barHeight * 0.4)
+    sheen:SetHeight(barHeight * 0)
     sheen:SetTexture("Interface\\Buttons\\WHITE8x8")
     sheen:SetVertexColor(1, 1, 1, 0.25)
     sheen:SetBlendMode("ADD")
@@ -636,7 +544,7 @@ local title = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 title:SetPoint("CENTER", dragHandle, "CENTER", 0, 0)
 title:SetText("UAHeal")
 
-local cardBorder = CreateCardBorder(f, -35, 59)
+local cardBorder = CreateCardBorder(f, -35, TOTAL_BORDER_HEIGHT)
 f.cardBorder = cardBorder
 
 AttachTargetOnClick(cardBorder, function() return "player" end)
@@ -644,8 +552,8 @@ AttachTargetOnClick(cardBorder, function() return "player" end)
 local hpBar = CreateFrame("Frame", "UAHealHPBar", f)
 hpBar:SetPoint("TOP", f, "TOP", 0, -36)
 hpBar:SetFrameLevel(2)
-hpBar:SetWidth(118)
-hpBar:SetHeight(52)
+hpBar:SetWidth(UI_CONFIG.UNIT_WIDTH)
+hpBar:SetHeight(UI_CONFIG.HP_HEIGHT)
 hpBar:EnableMouse(false)
 
 local hpBG = hpBar:CreateTexture(nil, "BACKGROUND")
@@ -655,15 +563,15 @@ hpBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local hpFill = hpBar:CreateTexture(nil, "ARTWORK")
 hpFill:SetPoint("LEFT", hpBar, "LEFT")
-hpFill:SetHeight(52)
+hpFill:SetHeight(UI_CONFIG.HP_HEIGHT)
 hpFill:SetTexture("Interface\\Buttons\\WHITE8x8")
 hpFill:SetVertexColor(1, 0, 0, 1)
 
-AddBarSheen(hpBar, 52)
+AddBarSheen(hpBar, UI_CONFIG.HP_HEIGHT)
 
 local textBacking = hpBar:CreateTexture(nil, "BACKGROUND")
 textBacking:SetPoint("TOP", hpBar, "TOP", 0, -10)
-textBacking:SetWidth(118)
+textBacking:SetWidth(UI_CONFIG.UNIT_WIDTH)
 textBacking:SetHeight(32)
 textBacking:SetTexture("Interface\\Buttons\\WHITE8x8")
 textBacking:SetVertexColor(0, 0, 0, 0.85)
@@ -685,8 +593,8 @@ local debuffIcons = CreateDebuffIcons(hpBar)
 local mpBar = CreateFrame("Frame", "UAHealMPBar", f)
 mpBar:SetPoint("TOP", hpBar, "BOTTOM", 0, 0)
 mpBar:SetFrameLevel(2)
-mpBar:SetWidth(118)
-mpBar:SetHeight(5)
+mpBar:SetWidth(UI_CONFIG.UNIT_WIDTH)
+mpBar:SetHeight(UI_CONFIG.MP_HEIGHT)
 mpBar:EnableMouse(false)
 
 local mpBG = mpBar:CreateTexture(nil, "BACKGROUND")
@@ -696,7 +604,7 @@ mpBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local mpFill = mpBar:CreateTexture(nil, "ARTWORK")
 mpFill:SetPoint("LEFT", mpBar, "LEFT")
-mpFill:SetHeight(5)
+mpFill:SetHeight(UI_CONFIG.MP_HEIGHT)
 mpFill:SetTexture("Interface\\Buttons\\WHITE8x8")
 mpFill:SetVertexColor(0, 0, 1, 1)
 
@@ -733,7 +641,7 @@ f:SetScript("OnUpdate", function()
     local hp = UnitHealth(unit) or 0
     local hpMax = UnitHealthMax(unit) or 1
     local hpPercent = ClampPercent(hpMax > 0 and (hp / hpMax) or 0)
-    hpFill:SetWidth(118 * hpPercent * currentScale)
+    hpFill:SetWidth(UI_CONFIG.UNIT_WIDTH * hpPercent * currentScale)
     if hpPercent <= LOW_HEALTH_THRESHOLD then
         hpFill:SetVertexColor(1, 0, 0)
     else
@@ -741,12 +649,13 @@ f:SetScript("OnUpdate", function()
     end
 
     hpText:SetText(name)
-    hpValueText:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
+    hpValueText:SetText("-"..(hpMax-hp) .. "/" .. hpMax)
+--    hpValueText:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
 
     local mp = UnitMana(unit) or 0
     local mpMax = UnitManaMax(unit) or 1
     local mpPercent = ClampPercent(mpMax > 0 and (mp / mpMax) or 0)
-    mpFill:SetWidth(118 * mpPercent * currentScale)
+    mpFill:SetWidth(UI_CONFIG.UNIT_WIDTH * mpPercent * currentScale)
     mpFill:SetVertexColor(GetPowerColor(unit))
 
     UpdateBuffIcons(buffIcons, unit)
@@ -803,7 +712,7 @@ for index, unit in ipairs(units) do
     frame:SetHeight(120)
     table.insert(partyFrames, frame)
 
-    local cardBorder2 = CreateCardBorder(frame, -35, 59)
+    local cardBorder2 = CreateCardBorder(frame, -35, TOTAL_BORDER_HEIGHT)
     frame.cardBorder = cardBorder2
 
     AttachTargetOnClick(cardBorder2, function() return thisUnit end)
@@ -816,22 +725,22 @@ for index, unit in ipairs(units) do
     petOwnerFrame:Hide()
     frame.petOwnerFrame = petOwnerFrame
 
-    local petIndicator = CreateCardBorder(petOwnerFrame, -35, 59)
+    local petIndicator = CreateCardBorder(petOwnerFrame, -35, TOTAL_BORDER_HEIGHT)
     AttachTargetOnClick(petIndicator, function() return partyPetUnit end)
 
     local petIndicatorHPBar = CreateFrame("Frame", nil, petOwnerFrame)
     petIndicatorHPBar:SetPoint("TOP", petOwnerFrame, "TOP", 0, -36)
     petIndicatorHPBar:SetFrameLevel(2)
-    petIndicatorHPBar:SetWidth(118)
-    petIndicatorHPBar:SetHeight(52)
+    petIndicatorHPBar:SetWidth(UI_CONFIG.UNIT_WIDTH)
+    petIndicatorHPBar:SetHeight(UI_CONFIG.HP_HEIGHT)
 
     local petIndicatorFill = petIndicatorHPBar:CreateTexture(nil, "ARTWORK")
     petIndicatorFill:SetPoint("LEFT", petIndicatorHPBar, "LEFT")
-    petIndicatorFill:SetHeight(52)
+    petIndicatorFill:SetHeight(UI_CONFIG.HP_HEIGHT)
     petIndicatorFill:SetTexture("Interface\\Buttons\\WHITE8x8")
     petIndicatorFill:SetVertexColor(0.1, 0.7, 0.5, 1)
 
-    AddBarSheen(petIndicatorHPBar, 52)
+    AddBarSheen(petIndicatorHPBar, UI_CONFIG.HP_HEIGHT)
 
     local petIndicatorText = petIndicatorHPBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     petIndicatorText:SetPoint("TOP", petIndicatorHPBar, "TOP", 0, -18)
@@ -846,12 +755,12 @@ for index, unit in ipairs(units) do
     local petIndicatorMPBar = CreateFrame("Frame", nil, petOwnerFrame)
     petIndicatorMPBar:SetPoint("TOP", petIndicatorHPBar, "BOTTOM", 0, 0)
     petIndicatorMPBar:SetFrameLevel(2)
-    petIndicatorMPBar:SetWidth(118)
-    petIndicatorMPBar:SetHeight(5)
+    petIndicatorMPBar:SetWidth(UI_CONFIG.UNIT_WIDTH)
+    petIndicatorMPBar:SetHeight(UI_CONFIG.MP_HEIGHT)
 
     local petIndicatorMPFill = petIndicatorMPBar:CreateTexture(nil, "ARTWORK")
     petIndicatorMPFill:SetPoint("LEFT", petIndicatorMPBar, "LEFT")
-    petIndicatorMPFill:SetHeight(5)
+    petIndicatorMPFill:SetHeight(UI_CONFIG.MP_HEIGHT)
     petIndicatorMPFill:SetTexture("Interface\\Buttons\\WHITE8x8")
     petIndicatorMPFill:SetVertexColor(0, 0, 1, 1)
 
@@ -859,8 +768,8 @@ for index, unit in ipairs(units) do
     frame.hpBar = hpBar2
     hpBar2:SetPoint("TOP", frame, "TOP", 0, -36)
     hpBar2:SetFrameLevel(2)
-    hpBar2:SetWidth(118)
-    hpBar2:SetHeight(52)
+    hpBar2:SetWidth(UI_CONFIG.UNIT_WIDTH)
+    hpBar2:SetHeight(UI_CONFIG.HP_HEIGHT)
 
     local hpBG2 = hpBar2:CreateTexture(nil, "BACKGROUND")
     hpBG2:SetAllPoints()
@@ -869,11 +778,11 @@ for index, unit in ipairs(units) do
 
     local hpFill2 = hpBar2:CreateTexture(nil, "ARTWORK")
     hpFill2:SetPoint("LEFT", hpBar2, "LEFT")
-    hpFill2:SetHeight(52)
+    hpFill2:SetHeight(UI_CONFIG.HP_HEIGHT)
     hpFill2:SetTexture("Interface\\Buttons\\WHITE8x8")
     hpFill2:SetVertexColor(1, 0, 0, 1)
 
-    AddBarSheen(hpBar2, 52)
+    AddBarSheen(hpBar2, UI_CONFIG.HP_HEIGHT)
 
     local hpText2 = hpBar2:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hpText2:SetPoint("TOP", hpBar2, "TOP", 0, -18)
@@ -897,8 +806,8 @@ for index, unit in ipairs(units) do
     frame.mpBar = mpBar2
     mpBar2:SetPoint("TOP", hpBar2, "BOTTOM", 0, 0)
     mpBar2:SetFrameLevel(2)
-    mpBar2:SetWidth(118)
-    mpBar2:SetHeight(5)
+    mpBar2:SetWidth(UI_CONFIG.UNIT_WIDTH)
+    mpBar2:SetHeight(UI_CONFIG.MP_HEIGHT)
 
     local mpBG2 = mpBar2:CreateTexture(nil, "BACKGROUND")
     mpBG2:SetAllPoints()
@@ -907,7 +816,7 @@ for index, unit in ipairs(units) do
 
     local mpFill2 = mpBar2:CreateTexture(nil, "ARTWORK")
     mpFill2:SetPoint("LEFT", mpBar2, "LEFT")
-    mpFill2:SetHeight(5)
+    mpFill2:SetHeight(UI_CONFIG.MP_HEIGHT)
     mpFill2:SetTexture("Interface\\Buttons\\WHITE8x8")
     mpFill2:SetVertexColor(0, 0, 1, 1)
 
@@ -930,7 +839,7 @@ for index, unit in ipairs(units) do
                 local petHP = UnitHealth(partyPetUnit) or 0
                 local petHPMax = UnitHealthMax(partyPetUnit) or 1
                 local petHPPercent = ClampPercent(petHPMax > 0 and (petHP / petHPMax) or 0)
-                petIndicatorFill:SetWidth(118 * petHPPercent * currentScale)
+                petIndicatorFill:SetWidth(UI_CONFIG.UNIT_WIDTH * petHPPercent * currentScale)
                 if petHPPercent <= LOW_HEALTH_THRESHOLD then
                     petIndicatorFill:SetVertexColor(1, 0, 0)
                 else
@@ -944,7 +853,7 @@ for index, unit in ipairs(units) do
                 local petMP = UnitMana(partyPetUnit) or 0
                 local petMPMax = UnitManaMax(partyPetUnit) or 1
                 local petMPPercent = ClampPercent(petMPMax > 0 and (petMP / petMPMax) or 0)
-                petIndicatorMPFill:SetWidth(118 * petMPPercent * currentScale)
+                petIndicatorMPFill:SetWidth(UI_CONFIG.UNIT_WIDTH * petMPPercent * currentScale)
                 petIndicatorMPFill:SetVertexColor(GetPowerColor(partyPetUnit))
             else
                 petOwnerFrame:Hide()
@@ -957,7 +866,7 @@ for index, unit in ipairs(units) do
             local hp = UnitHealth(thisUnit) or 0
             local hpMax = UnitHealthMax(thisUnit) or 1
             local hpPercent = ClampPercent(hpMax > 0 and (hp / hpMax) or 0)
-            hpFill2:SetWidth(118 * hpPercent * currentScale)
+            hpFill2:SetWidth(UI_CONFIG.UNIT_WIDTH * hpPercent * currentScale)
 
             local name = UnitName(thisUnit) or "Unknown"
 
@@ -981,7 +890,7 @@ for index, unit in ipairs(units) do
                     local mp = UnitMana(thisUnit) or 0
                     local mpMax = UnitManaMax(thisUnit) or 1
                     local mpPercent = ClampPercent(mpMax > 0 and (mp / mpMax) or 0)
-                    mpFill2:SetWidth(118 * mpPercent * currentScale)
+                    mpFill2:SetWidth(UI_CONFIG.UNIT_WIDTH * mpPercent * currentScale)
                     mpFill2:SetVertexColor(GetPowerColor(thisUnit))
                 end
 
@@ -1019,35 +928,11 @@ end
 PositionPartyFrames()
 
 ---------------------------------------------------------
--- SLASH COMMANDS
----------------------------------------------------------
-
-SLASH_UAHEAL1 = "/uaheal"
-SLASH_UAHEAL2 = "/uah"
-SlashCmdList["UAHEAL"] = function(msg)
-    msg = string.lower(msg or "")
-
-    if msg == "settings" then
-        settingsWindow:Show()
-
-    elseif msg == "reload" then
-        dragHandle:ClearAllPoints()
-        dragHandle:SetPoint("TOP", UIParent, "TOP", 0, -200)
-
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("UAHeal commands:")
-        DEFAULT_CHAT_FRAME:AddMessage("/uaheal settings (or /uah settings) - opens the Settings window")
-        DEFAULT_CHAT_FRAME:AddMessage("/uaheal reload (or /uah reload) - resets the panel back to the default position")
-        DEFAULT_CHAT_FRAME:AddMessage("/uaheal (or /uah) - shows this list")
-    end
-end
-
----------------------------------------------------------
 -- RAID FRAMES (raid1-40)
 ---------------------------------------------------------
 
-local RAID_FRAME_WIDTH = 80
-local RAID_FRAME_HEIGHT = 24
+local RAID_FRAME_WIDTH = UI_CONFIG.RAID_WIDTH
+local RAID_FRAME_HEIGHT = UI_CONFIG.RAID_HEIGHT
 local RAID_COLS = 8
 local RAID_GAP = 2
 
@@ -1056,15 +941,6 @@ raidContainer:SetFrameStrata("LOW")
 raidContainer:SetWidth(RAID_COLS * (RAID_FRAME_WIDTH + RAID_GAP))
 raidContainer:SetHeight(5 * (RAID_FRAME_HEIGHT + RAID_GAP))
 raidContainer:SetPoint("TOP", dragHandle, "BOTTOM", 8, -10)
-
-ApplyScale = function(value)
-    f:SetScale(value)
-    for _, pf in ipairs(partyFrames) do
-        pf:SetScale(value)
-    end
-    raidContainer:SetScale(value)
-    dragHandle:SetWidth(100 * value)
-end
 
 for i = 1, 40 do
     local raidUnit = "raid" .. i
@@ -1137,14 +1013,14 @@ for i = 1, 40 do
 end
 
 ---------------------------------------------------------
--- PET FRAME
+-- PET FRAME (CENTER POSITIONED)
 ---------------------------------------------------------
 
 local petDragHandle = CreateFrame("Frame", "UAHealPetDragHandle", UIParent)
 petDragHandle:SetFrameStrata("LOW")
-petDragHandle:SetWidth(100)
-petDragHandle:SetHeight(16)
-petDragHandle:SetPoint("TOP", UIParent, "TOP", 150, -200)
+petDragHandle:SetWidth(UI_CONFIG.DRAG_WIDTH)
+petDragHandle:SetHeight(UI_CONFIG.DRAG_HEIGHT)
+petDragHandle:SetPoint("CENTER", UIParent, "CENTER", 150, 0)
 petDragHandle:EnableMouse(true)
 ApplyButtonBevel(petDragHandle)
 
@@ -1156,8 +1032,8 @@ local petIsMinimized = false
 
 local petMinimizeButton = CreateFrame("Frame", "UAHealPetMinimizeButton", UIParent)
 petMinimizeButton:SetFrameStrata("LOW")
-petMinimizeButton:SetWidth(16)
-petMinimizeButton:SetHeight(16)
+petMinimizeButton:SetWidth(UI_CONFIG.DRAG_HEIGHT)
+petMinimizeButton:SetHeight(UI_CONFIG.DRAG_HEIGHT)
 petMinimizeButton:SetPoint("LEFT", petDragHandle, "RIGHT", 0, 0)
 petMinimizeButton:EnableMouse(true)
 ApplyButtonBevel(petMinimizeButton)
@@ -1211,15 +1087,15 @@ petFrame:SetHeight(120)
 petFrame:SetPoint("TOP", petDragHandle, "BOTTOM", 8, 35)
 petFrame:EnableMouse(false)
 
-local petCardBorder = CreateCardBorder(petFrame, -35, 59)
+local petCardBorder = CreateCardBorder(petFrame, -35, TOTAL_BORDER_HEIGHT)
 
 AttachTargetOnClick(petCardBorder, function() return "pet" end)
 
 local petHPBar = CreateFrame("Frame", "UAHealPetHPBar", petFrame)
 petHPBar:SetPoint("TOP", petFrame, "TOP", 0, -36)
 petHPBar:SetFrameLevel(2)
-petHPBar:SetWidth(118)
-petHPBar:SetHeight(52)
+petHPBar:SetWidth(UI_CONFIG.UNIT_WIDTH)
+petHPBar:SetHeight(UI_CONFIG.HP_HEIGHT)
 petHPBar:EnableMouse(false)
 
 local petHPBG = petHPBar:CreateTexture(nil, "BACKGROUND")
@@ -1229,11 +1105,11 @@ petHPBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local petHPFill = petHPBar:CreateTexture(nil, "ARTWORK")
 petHPFill:SetPoint("LEFT", petHPBar, "LEFT")
-petHPFill:SetHeight(52)
+petHPFill:SetHeight(UI_CONFIG.HP_HEIGHT)
 petHPFill:SetTexture("Interface\\Buttons\\WHITE8x8")
 petHPFill:SetVertexColor(0.1, 0.7, 0.5, 1)
 
-AddBarSheen(petHPBar, 52)
+AddBarSheen(petHPBar, UI_CONFIG.HP_HEIGHT)
 
 local petHPText = petHPBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 petHPText:SetPoint("TOP", petHPBar, "TOP", 0, -18)
@@ -1250,8 +1126,8 @@ local petBuffIcons = CreateBuffIcons(petHPBar)
 local petMPBar = CreateFrame("Frame", "UAHealPetMPBar", petFrame)
 petMPBar:SetPoint("TOP", petHPBar, "BOTTOM", 0, 0)
 petMPBar:SetFrameLevel(2)
-petMPBar:SetWidth(118)
-petMPBar:SetHeight(5)
+petMPBar:SetWidth(UI_CONFIG.UNIT_WIDTH)
+petMPBar:SetHeight(UI_CONFIG.MP_HEIGHT)
 petMPBar:EnableMouse(false)
 
 local petMPBG = petMPBar:CreateTexture(nil, "BACKGROUND")
@@ -1261,7 +1137,7 @@ petMPBG:SetVertexColor(0.2, 0.2, 0.2, 0.8)
 
 local petMPFill = petMPBar:CreateTexture(nil, "ARTWORK")
 petMPFill:SetPoint("LEFT", petMPBar, "LEFT")
-petMPFill:SetHeight(5)
+petMPFill:SetHeight(UI_CONFIG.MP_HEIGHT)
 petMPFill:SetTexture("Interface\\Buttons\\WHITE8x8")
 petMPFill:SetVertexColor(0, 0, 1, 1)
 
@@ -1294,7 +1170,7 @@ petFrame:SetScript("OnUpdate", function()
     local hp = UnitHealth(unit) or 0
     local hpMax = UnitHealthMax(unit) or 1
     local hpPercent = ClampPercent(hpMax > 0 and (hp / hpMax) or 0)
-    petHPFill:SetWidth(118 * hpPercent * currentScale)
+    petHPFill:SetWidth(UI_CONFIG.UNIT_WIDTH * hpPercent * currentScale)
     if hpPercent <= LOW_HEALTH_THRESHOLD then
         petHPFill:SetVertexColor(1, 0, 0)
     else
@@ -1308,17 +1184,8 @@ petFrame:SetScript("OnUpdate", function()
     local mp = UnitMana(unit) or 0
     local mpMax = UnitManaMax(unit) or 1
     local mpPercent = ClampPercent(mpMax > 0 and (mp / mpMax) or 0)
-    petMPFill:SetWidth(118 * mpPercent * currentScale)
+    petMPFill:SetWidth(UI_CONFIG.UNIT_WIDTH * mpPercent * currentScale)
     petMPFill:SetVertexColor(GetPowerColor(unit))
 
     UpdateBuffIcons(petBuffIcons, unit)
 end)
-
-petFrame:SetScale(currentScale)
-
-local baseApplyScale = ApplyScale
-ApplyScale = function(value)
-    baseApplyScale(value)
-    petFrame:SetScale(value)
-end
-
