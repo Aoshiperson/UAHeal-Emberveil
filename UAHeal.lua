@@ -548,6 +548,7 @@ local cardBorder = CreateCardBorder(f, -35, TOTAL_BORDER_HEIGHT)
 f.cardBorder = cardBorder
 
 AttachTargetOnClick(cardBorder, function() return "player" end)
+cardBorder.unit = "player"
 
 local hpBar = CreateFrame("Frame", "UAHealHPBar", f)
 hpBar:SetPoint("TOP", f, "TOP", 0, -36)
@@ -716,6 +717,7 @@ for index, unit in ipairs(units) do
     frame.cardBorder = cardBorder2
 
     AttachTargetOnClick(cardBorder2, function() return thisUnit end)
+    cardBorder2.unit = thisUnit
 
     local petOwnerFrame = CreateFrame("Frame", nil, frame)
     petOwnerFrame:SetWidth(200)
@@ -727,6 +729,7 @@ for index, unit in ipairs(units) do
 
     local petIndicator = CreateCardBorder(petOwnerFrame, -35, TOTAL_BORDER_HEIGHT)
     AttachTargetOnClick(petIndicator, function() return partyPetUnit end)
+    petIndicator.unit = partyPetUnit
 
     local petIndicatorHPBar = CreateFrame("Frame", nil, petOwnerFrame)
     petIndicatorHPBar:SetPoint("TOP", petOwnerFrame, "TOP", 0, -36)
@@ -977,6 +980,7 @@ for i = 1, 40 do
         end
         return nil
     end)
+    rFrame.unit = raidUnit
 
     rFrame:SetScript("OnUpdate", function()
         if InRaidMode() and not isMinimized and UnitExists(raidUnit) then
@@ -1090,6 +1094,7 @@ petFrame:EnableMouse(false)
 local petCardBorder = CreateCardBorder(petFrame, -35, TOTAL_BORDER_HEIGHT)
 
 AttachTargetOnClick(petCardBorder, function() return "pet" end)
+petCardBorder.unit = "pet"
 
 local petHPBar = CreateFrame("Frame", "UAHealPetHPBar", petFrame)
 petHPBar:SetPoint("TOP", petFrame, "TOP", 0, -36)
