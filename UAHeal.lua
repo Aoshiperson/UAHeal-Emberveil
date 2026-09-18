@@ -337,7 +337,7 @@ end
 -- BUFF / DEBUFF ICONS
 ---------------------------------------------------------
 
-local BUFF_ICON_SIZE = 12
+local BUFF_ICON_SIZE = 10
 local BUFF_ICON_COUNT = 6
 
 local function CreateBuffIcons(parentBar)
@@ -409,7 +409,7 @@ local function UpdateBuffIcons(icons, unit)
     end
 end
 
-local DEBUFF_ICON_SIZE = 12
+local DEBUFF_ICON_SIZE = 10
 local DEBUFF_ICON_COUNT = 6
 
 local function CreateDebuffIcons(parentBar)
@@ -419,9 +419,9 @@ local function CreateDebuffIcons(parentBar)
         icon:SetWidth(DEBUFF_ICON_SIZE)
         icon:SetHeight(DEBUFF_ICON_SIZE)
         if i == 1 then
-            icon:SetPoint("BOTTOMLEFT", parentBar, "BOTTOMLEFT", 2, 2)
+            icon:SetPoint("BOTTOMLEFT", parentBar, "BOTTOMLEFT", 0, 0)
         else
-            icon:SetPoint("LEFT", icons[i - 1], "RIGHT", 1, 0)
+            icon:SetPoint("LEFT", icons[i - 1], "RIGHT", 0, 0)
         end
         icon:Hide()
         icons[i] = icon
