@@ -631,7 +631,7 @@ f:SetScript("OnUpdate", function()
         hpFill:SetWidth(0)
         hpFill:SetVertexColor(0.5, 0.5, 0.5)
         hpText:SetText(name)
-        hpValueText:SetText("Dead")
+        hpValueText:SetText("死亡")
         mpFill:SetWidth(0)
         UpdateBuffIcons(buffIcons, unit)
         UpdateDebuffIcons(debuffIcons, unit)
@@ -879,7 +879,7 @@ for index, unit in ipairs(units) do
                     hpFill2:SetWidth(0)
                     hpFill2:SetVertexColor(0.5, 0.5, 0.5)
                     hpText2:SetText(name)
-                    hpValueText2:SetText("Dead")
+                    hpValueText2:SetText("死亡")
                     mpFill2:SetWidth(0)
                 else
                     if hpPercent <= LOW_HEALTH_THRESHOLD then
@@ -888,7 +888,8 @@ for index, unit in ipairs(units) do
                         hpFill2:SetVertexColor(GetClassColor(thisUnit))
                     end
                     hpText2:SetText(name)
-                    hpValueText2:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
+	        	hpValueText2:SetText("-"..(hpMax-hp) .. "/" .. hpMax)
+--                    hpValueText2:SetText(math.floor(hpPercent * 100) .. "%      " .. hp .. "/" .. hpMax)
 
                     local mp = UnitMana(thisUnit) or 0
                     local mpMax = UnitManaMax(thisUnit) or 1
@@ -903,7 +904,7 @@ for index, unit in ipairs(units) do
                 mpBar2:Hide()
                 hpFill2:SetVertexColor(0.5, 0.5, 0.5)
                 hpText2:SetText(name)
-                hpValueText2:SetText("Disconnected")
+                hpValueText2:SetText("离线")
 
                 for i = 1, BUFF_ICON_COUNT do
                     buffIcons2[i]:Hide()
